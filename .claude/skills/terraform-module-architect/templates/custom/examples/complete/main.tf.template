@@ -1,0 +1,30 @@
+# Complete Example for {{MODULE_NAME}} Module
+# Demonstrates all available options
+
+module "{{MODULE_NAME_UNDERSCORED}}" {
+  source = "../.."
+
+  name        = "complete-example"
+  environment = "production"
+
+  # Add all module-specific variables here with examples
+
+  tags = {
+    Example     = "complete"
+    Project     = "Demo"
+    Owner       = "Platform Team"
+    CostCenter  = "Engineering"
+    Compliance  = "SOC2"
+  }
+}
+
+# Example outputs
+output "module_id" {
+  description = "Module ID"
+  value       = module.{{MODULE_NAME_UNDERSCORED}}.id
+}
+
+output "module_arn" {
+  description = "Module ARN"
+  value       = module.{{MODULE_NAME_UNDERSCORED}}.arn
+}

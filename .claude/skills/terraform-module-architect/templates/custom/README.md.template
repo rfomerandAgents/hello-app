@@ -1,0 +1,124 @@
+# {{MODULE_NAME}} - Terraform Module
+
+{{DESCRIPTION}}
+
+Generated on {{DATE}} by {{AUTHOR}}
+
+## Features
+
+- Standard naming conventions
+- Comprehensive tagging strategy
+- Input validation rules
+- Environment-aware configuration
+- Modular and reusable design
+
+## Usage
+
+### Basic Example
+
+```hcl
+module "{{MODULE_NAME}}" {
+  source = "./terraform/modules/{{MODULE_NAME}}"
+
+  name        = "myapp"
+  environment = "{{ENVIRONMENT}}"
+
+  tags = {
+    Project = "MyProject"
+    Owner   = "Platform Team"
+  }
+}
+```
+
+### Advanced Example
+
+```hcl
+module "{{MODULE_NAME}}" {
+  source = "./terraform/modules/{{MODULE_NAME}}"
+
+  name        = "myapp"
+  environment = "production"
+
+  # Add module-specific variables here
+
+  tags = {
+    Project     = "MyProject"
+    Owner       = "Platform Team"
+    CostCenter  = "Engineering"
+    Compliance  = "SOC2"
+  }
+}
+```
+
+## Requirements
+
+| Name | Version |
+|------|---------|
+| terraform | {{TERRAFORM_VERSION}} |
+| {{PROVIDER}} | >= 5.0 |
+
+## Providers
+
+| Name | Version |
+|------|---------|
+| {{PROVIDER}} | >= 5.0 |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| name | Name prefix for resources | `string` | n/a | yes |
+| environment | Environment name | `string` | n/a | yes |
+| tags | Additional tags | `map(string)` | `{}` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| id | Resource ID |
+
+## Examples
+
+- [Basic](./examples/basic) - Basic module usage
+- [Complete](./examples/complete) - Complete configuration with all options
+
+## Testing
+
+Run tests:
+```bash
+cd tests
+go test -v
+```
+
+## Development
+
+### Adding Resources
+
+1. Define resources in `main.tf`
+2. Add required variables to `variables.tf`
+3. Export important attributes in `outputs.tf`
+4. Update this README
+5. Add tests
+
+### Module Standards
+
+- Follow naming convention: `{name}-{environment}-{resource-type}`
+- Always include validation rules for inputs
+- Use `local.common_tags` for consistent tagging
+- Document all variables and outputs
+- Provide usage examples
+
+## Authors
+
+Created by {{AUTHOR}}
+
+## License
+
+Apache 2.0
+
+## Maintenance
+
+- **Created:** {{DATE}}
+- **Author:** {{AUTHOR}}
+- **Module Type:** {{MODULE_TYPE}}
+- **Last Updated:** {{DATE}}

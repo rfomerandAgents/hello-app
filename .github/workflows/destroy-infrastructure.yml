@@ -1,0 +1,157 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - sandbox
+          - dev
+          - staging
+          - prod
+        default: 'sandbox'
+      confirmation:
+        description: 'Type DESTROY to confirm'
+        required: true
+        type: string
+      cleanup_amis:
+        description: 'Also delete AMIs and snapshots'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-destroy-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: ${{ github.event.inputs.environment }}
+  PROJECT_NAME: "{{PROJECT_NAME_SLUG}}"
+
+jobs:
+  validate:
+    name: Validate Destruction Request
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Check confirmation
+        id: check
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "DESTROY" ]; then
+            echo "Error: You must type 'DESTROY' to confirm"
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "proceed=true" >> $GITHUB_OUTPUT
+
+      - name: Production warning
+        if: github.event.inputs.environment == 'prod'
+        run: |
+          echo "⚠️ WARNING: You are about to destroy PRODUCTION infrastructure!"
+          echo "This action is irreversible and will cause downtime."
+
+  destroy:
+    name: Destroy Infrastructure
+    needs: validate
+    if: needs.validate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKSPACE: ${{ env.PROJECT_NAME }}-${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: io/terraform
+
+      - name: Terraform Destroy Plan
+        run: terraform plan -destroy -out=tfplan
+        working-directory: io/terraform
+
+      - name: Terraform Destroy
+        run: terraform apply -auto-approve tfplan
+        working-directory: io/terraform
+
+  cleanup-amis:
+    name: Cleanup AMIs and Snapshots
+    needs: destroy
+    if: github.event.inputs.cleanup_amis == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete AMIs and Snapshots
+        run: |
+          echo "Finding AMIs matching pattern: ${{ env.PROJECT_NAME }}-*"
+
+          # Get all AMIs
+          AMIS=$(aws ec2 describe-images \
+            --owners self \
+            --filters "Name=name,Values=${{ env.PROJECT_NAME }}-*" \
+            --query 'Images[*].[ImageId,BlockDeviceMappings[0].Ebs.SnapshotId]' \
+            --output text)
+
+          if [ -z "$AMIS" ]; then
+            echo "No AMIs found to delete"
+            exit 0
+          fi
+
+          echo "Found AMIs to delete:"
+          echo "$AMIS"
+
+          # Delete each AMI and its snapshot
+          echo "$AMIS" | while read AMI_ID SNAPSHOT_ID; do
+            echo "Deregistering AMI: $AMI_ID"
+            aws ec2 deregister-image --image-id "$AMI_ID" || true
+
+            if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
+              echo "Deleting snapshot: $SNAPSHOT_ID"
+              aws ec2 delete-snapshot --snapshot-id "$SNAPSHOT_ID" || true
+            fi
+          done
+
+          echo "Cleanup complete"
+
+  summary:
+    name: Destruction Summary
+    needs: [destroy, cleanup-amis]
+    if: always() && needs.destroy.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# Infrastructure Destruction Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Destroyed" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.cleanup_amis }}" == "true" ]; then
+            echo "**AMI Cleanup:** Yes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**AMI Cleanup:** No (AMIs preserved)" >> $GITHUB_STEP_SUMMARY
+          fi

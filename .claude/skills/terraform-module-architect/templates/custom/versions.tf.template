@@ -1,0 +1,13 @@
+# {{MODULE_NAME}} - Version Constraints
+# Generated on {{DATE}}
+
+terraform {
+  required_version = "{{TERRAFORM_VERSION}}"
+
+  required_providers {
+    {{PROVIDER}} = {
+      source  = "hashicorp/{{PROVIDER}}"
+      version = ">= 5.0"
+    }
+  }
+}

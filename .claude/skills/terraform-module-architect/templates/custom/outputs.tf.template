@@ -1,0 +1,22 @@
+# {{MODULE_NAME}} - Outputs
+# Generated on {{DATE}}
+
+# TODO: Add your output definitions here
+# Example:
+# output "id" {
+#   description = "The ID of the created resource"
+#   value       = aws_resource.main.id
+# }
+
+# output "arn" {
+#   description = "The ARN of the created resource"
+#   value       = aws_resource.main.arn
+# }
+
+# output "connection_info" {
+#   description = "Connection information for the resource"
+#   value = {
+#     endpoint = aws_resource.main.endpoint
+#     port     = aws_resource.main.port
+#   }
+# }

@@ -1,0 +1,60 @@
+# Tests for {{MODULE_NAME}} Module
+
+Terratest-based integration tests for the {{MODULE_NAME}} Terraform module.
+
+## Prerequisites
+
+- Go 1.21 or higher
+- AWS credentials configured
+- Terraform installed
+
+## Running Tests
+
+### All Tests
+
+```bash
+go test -v -timeout 30m
+```
+
+### Specific Test
+
+```bash
+go test -v -run Test{{MODULE_NAME_UNDERSCORED}}Module -timeout 30m
+```
+
+### Parallel Tests
+
+```bash
+go test -v -parallel 3 -timeout 60m
+```
+
+## Test Structure
+
+- `basic_test.go` - Basic functionality tests
+- Tests use Terratest to deploy real infrastructure
+- Resources are automatically cleaned up after tests
+
+## Development
+
+### Adding New Tests
+
+1. Create new test function: `func TestMyFeature(t *testing.T)`
+2. Use `t.Parallel()` for parallel execution
+3. Configure terraform options
+4. Use `defer terraform.Destroy()` for cleanup
+5. Add assertions with `assert` package
+
+### Test Best Practices
+
+- Always clean up resources (use defer)
+- Use parallel execution when possible
+- Set appropriate timeouts
+- Test one feature per test function
+- Use descriptive test names
+
+## Cost Optimization
+
+- Tests create real AWS resources (costs money)
+- Use smallest instance types for testing
+- Clean up is automatic (via defer)
+- Run only necessary tests during development

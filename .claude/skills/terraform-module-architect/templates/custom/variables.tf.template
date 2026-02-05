@@ -1,0 +1,40 @@
+# {{MODULE_NAME}} - Input Variables
+# Generated on {{DATE}}
+
+variable "name" {
+  description = "Name prefix for all resources"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+$", var.name))
+    error_message = "Name must contain only lowercase alphanumeric characters and hyphens."
+  }
+}
+
+variable "environment" {
+  description = "Environment name (dev, staging, production)"
+  type        = string
+
+  validation {
+    condition     = contains(["dev", "staging", "production"], var.environment)
+    error_message = "Environment must be dev, staging, or production."
+  }
+}
+
+variable "tags" {
+  description = "Additional tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}
+
+# TODO: Add module-specific variables here
+# Example:
+# variable "cidr_block" {
+#   description = "CIDR block for VPC"
+#   type        = string
+#
+#   validation {
+#     condition     = can(cidrhost(var.cidr_block, 0))
+#     error_message = "Must be valid IPv4 CIDR block."
+#   }
+# }

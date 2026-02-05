@@ -1,0 +1,231 @@
+name: Build Golden AMI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packer/**'
+      - '.github/workflows/build-ami.yml'
+  pull_request:
+    paths:
+      - 'packer/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to build for'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+        default: 'dev'
+
+env:
+  AWS_REGION: us-east-1
+  PACKER_VERSION: 1.11.0
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Packer Template
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Packer Init
+        working-directory: packer
+        run: packer init .
+
+      - name: Packer Format Check
+        working-directory: packer
+        run: packer fmt -check .
+
+      - name: Packer Validate
+        working-directory: packer
+        run: packer validate -var "environment=dev" .
+
+  build:
+    name: Build AMI
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    outputs:
+      ami-id: ${{ steps.build.outputs.ami_id }}
+      ami-name: ${{ steps.build.outputs.ami_name }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-PackerBuild
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Cache Packer Plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.config/packer/plugins
+          key: ${{ runner.os }}-packer-${{ hashFiles('packer/**/*.pkr.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-packer-
+
+      - name: Packer Init
+        working-directory: packer
+        run: packer init .
+
+      - name: Packer Build
+        id: build
+        working-directory: packer
+        run: |
+          packer build \
+            -var "environment=${{ github.event.inputs.environment || 'dev' }}" \
+            -var "git_commit_sha=${{ github.sha }}" \
+            -var "git_ref=${{ github.ref }}" \
+            -machine-readable . | tee packer-output.txt
+          
+          # Extract AMI ID and name from manifest
+          AMI_ID=$(jq -r '.builds[-1].artifact_id' manifest.json | cut -d':' -f2)
+          AMI_NAME=$(jq -r '.builds[-1].custom_data.ami_name' manifest.json)
+          
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+          echo "ami_name=$AMI_NAME" >> $GITHUB_OUTPUT
+          
+          echo "### AMI Build Complete 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**AMI ID:** \`$AMI_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "**AMI Name:** \`$AMI_NAME\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-manifest
+          path: packer/manifest.json
+
+      - name: Tag AMI with Build Metadata
+        run: |
+          aws ec2 create-tags \
+            --resources ${{ steps.build.outputs.ami_id }} \
+            --tags \
+              Key=GitHubSHA,Value=${{ github.sha }} \
+              Key=GitHubRef,Value=${{ github.ref }} \
+              Key=GitHubActor,Value=${{ github.actor }} \
+              Key=GitHubRunID,Value=${{ github.run_id }} \
+              Key=BuildDate,Value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+      - name: Update SSM Parameter with Latest AMI
+        run: |
+          aws ssm put-parameter \
+            --name "/golden-ami/${{ github.event.inputs.environment || 'dev' }}/latest" \
+            --value "${{ steps.build.outputs.ami_id }}" \
+            --type String \
+            --overwrite \
+            --description "Latest golden AMI for ${{ github.event.inputs.environment || 'dev' }}"
+
+  update-terraform:
+    name: Update Terraform with New AMI
+    runs-on: ubuntu-latest
+    needs: build
+    if: success()
+    steps:
+      - name: Checkout Infrastructure Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/infrastructure
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Update Terraform Variable
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          AMI_ID="${{ needs.build.outputs.ami_id }}"
+          
+          # Update terraform.tfvars or variable file
+          sed -i "s/ami_id = .*/ami_id = \"$AMI_ID\"/" terraform/environments/$ENVIRONMENT/terraform.tfvars
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GH_PAT }}
+          commit-message: "Update AMI to ${{ needs.build.outputs.ami_name }}"
+          title: "Update ${{ github.event.inputs.environment || 'dev' }} AMI"
+          body: |
+            Automated update to use new golden AMI.
+            
+            **AMI ID:** `${{ needs.build.outputs.ami_id }}`
+            **AMI Name:** `${{ needs.build.outputs.ami_name }}`
+            **Build Trigger:** ${{ github.event_name }}
+            **Commit SHA:** ${{ github.sha }}
+          branch: update-ami-${{ github.event.inputs.environment || 'dev' }}
+          delete-branch: true
+
+  cleanup-old-amis:
+    name: Cleanup Old AMIs
+    runs-on: ubuntu-latest
+    needs: build
+    if: success() && github.event.inputs.environment == 'production'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deregister Old AMIs
+        run: |
+          KEEP_COUNT=5
+          AMI_PREFIX="golden-ami-production"
+          
+          # Get AMIs sorted by creation date
+          AMIS=$(aws ec2 describe-images \
+            --owners self \
+            --filters "Name=name,Values=${AMI_PREFIX}-*" \
+            --query 'sort_by(Images, &CreationDate)[*].[ImageId,Name,CreationDate]' \
+            --output text)
+          
+          TOTAL=$(echo "$AMIS" | wc -l)
+          DELETE_COUNT=$((TOTAL - KEEP_COUNT))
+          
+          if [ $DELETE_COUNT -gt 0 ]; then
+            echo "Deleting $DELETE_COUNT old AMIs..."
+            
+            echo "$AMIS" | head -n $DELETE_COUNT | while read AMI_ID NAME DATE; do
+              echo "Deregistering $AMI_ID ($NAME)"
+              
+              # Get snapshots
+              SNAPSHOTS=$(aws ec2 describe-images \
+                --image-ids $AMI_ID \
+                --query 'Images[*].BlockDeviceMappings[*].Ebs.SnapshotId' \
+                --output text)
+              
+              # Deregister AMI
+              aws ec2 deregister-image --image-id $AMI_ID
+              
+              # Delete snapshots
+              for SNAPSHOT in $SNAPSHOTS; do
+                echo "Deleting snapshot $SNAPSHOT"
+                aws ec2 delete-snapshot --snapshot-id $SNAPSHOT
+              done
+            done
+          else
+            echo "No AMIs to delete (total: $TOTAL, keeping: $KEEP_COUNT)"
+          fi

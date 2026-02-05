@@ -1,0 +1,97 @@
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+.npm
+
+# Next.js
+.next/
+out/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+trees/
+!trees/README.md
+
+# Claude hooks logs
+logs/
+
+# Git worktrees for deployment operations
+.worktrees/
+
+# Agent output directories
+agents/
+
+claude-max-output.json
+claude-max-output.jsonl
+
+storage.json
+
+deep_specs/
+
+screenshots/
+
+# Playwright video recordings
+videos/
+
+# Bun lock files
+bun.lock
+bun.lockb
+
+# troubleshooting
+failure/
+
+# IPE deployment logs - centralized logging directory
+ipe_logs/
+
+# ports
+.ports.env
+
+# MCP config - worktree-specific paths, must NOT be committed to main
+.mcp.json
+
+# Playwright config - worktree-specific paths, must NOT be committed to main
+playwright-mcp-config.json
+.playwright-mcp/
+# ADW spec files - ephemeral contracts between plan and build phases
+# These are worktree-local artifacts that should not pollute main
+specs/issue-*-adw-*
+
+# ADW KPI summary - auto-generated from entries (optionally ignored)
+# The entries file (agentic_kpis.md) is now tracked with union merge
+# app_docs/agentic_kpis_summary.md
+
+#.claude/commands/conditional_docs.md

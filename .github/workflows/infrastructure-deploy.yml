@@ -1,0 +1,296 @@
+name: Infrastructure Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_mode:
+        description: 'Deployment mode'
+        required: true
+        type: choice
+        options:
+          - full-deploy
+          - deploy-latest-ami
+          - deploy-custom-ami
+          - plan-only
+          - build-ami-only
+        default: 'full-deploy'
+      custom_ami_id:
+        description: 'Custom AMI ID (only for deploy-custom-ami mode)'
+        required: false
+        type: string
+      ami_version:
+        description: 'Custom AMI version (optional, for build-ami-only mode)'
+        required: false
+        type: string
+      version_strategy:
+        description: 'Version generation strategy (for build-ami-only mode)'
+        required: false
+        type: choice
+        options:
+          - git-describe
+          - semantic
+          - commit-hash
+          - timestamp
+          - custom
+        default: 'git-describe'
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options:
+          - sandbox
+          - dev
+          - staging
+          - prod
+        default: 'sandbox'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-deploy-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: ${{ github.event.inputs.environment }}
+  # Replace with your project name slug
+  PROJECT_NAME: "{{PROJECT_NAME_SLUG}}"
+
+jobs:
+  build-app:
+    name: Build App
+    if: github.event.inputs.deployment_mode == 'full-deploy' || github.event.inputs.deployment_mode == 'build-ami-only'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/.next/cache
+          key: build-${{ hashFiles('app/**/*.ts', 'app/**/*.tsx', 'app/**/*.js', 'app/**/*.jsx') }}
+          restore-keys: |
+            build-
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Build app
+        run: npm run build
+        working-directory: app
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: app/out
+          retention-days: 1
+
+  build-ami:
+    name: Build New AMI
+    if: always() && (github.event.inputs.deployment_mode == 'full-deploy' || github.event.inputs.deployment_mode == 'build-ami-only') && needs.build-app.result == 'success'
+    needs: [build-app]
+    runs-on: ubuntu-latest
+    outputs:
+      ami_id: ${{ steps.extract.outputs.ami_id }}
+      ami_name: ${{ steps.extract.outputs.ami_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+
+      - name: Cache Packer plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.packer.d/plugins
+          key: packer-plugins-${{ hashFiles('io/packer/.packer.lock.hcl') }}
+          restore-keys: |
+            packer-plugins-
+
+      - name: Download app build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: app-build
+          path: app/out
+
+      - name: Initialize Packer
+        run: packer init app.pkr.hcl
+        working-directory: io/packer
+
+      - name: Build AMI
+        run: |
+          AMI_NAME="${{ env.PROJECT_NAME }}-${{ github.run_number }}-$(date +%s)"
+          echo "Building AMI with name: $AMI_NAME"
+          packer build \
+            -var "ami_name=$AMI_NAME" \
+            app.pkr.hcl
+        working-directory: io/packer
+
+      - name: Extract AMI ID
+        id: extract
+        run: |
+          AMI_ID=$(jq -r '.builds[0].artifact_id' packer-manifest.json | cut -d':' -f2)
+          AMI_NAME=$(jq -r '.builds[0].custom_data.ami_name' packer-manifest.json)
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+          echo "ami_name=$AMI_NAME" >> $GITHUB_OUTPUT
+          echo "Built AMI: $AMI_ID"
+        working-directory: io/packer
+
+  get-latest-ami:
+    name: Get Latest AMI
+    if: github.event.inputs.deployment_mode == 'deploy-latest-ami'
+    runs-on: ubuntu-latest
+    outputs:
+      ami_id: ${{ steps.query.outputs.ami_id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Query latest AMI
+        id: query
+        run: |
+          AMI_ID=$(aws ec2 describe-images \
+            --owners self \
+            --filters "Name=name,Values=${{ env.PROJECT_NAME }}-*" \
+            --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+            --output text)
+
+          if [ -z "$AMI_ID" ] || [ "$AMI_ID" == "None" ]; then
+            echo "Error: No AMI found matching pattern '${{ env.PROJECT_NAME }}-*'"
+            exit 1
+          fi
+
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+          echo "Found latest AMI: $AMI_ID"
+
+  set-ami:
+    name: Determine AMI to Use
+    needs: [build-ami, get-latest-ami]
+    if: always() && github.event.inputs.deployment_mode != 'build-ami-only' && (needs.build-ami.result == 'success' || needs.get-latest-ami.result == 'success' || github.event.inputs.deployment_mode == 'deploy-custom-ami' || github.event.inputs.deployment_mode == 'plan-only')
+    runs-on: ubuntu-latest
+    outputs:
+      ami_id: ${{ steps.determine.outputs.ami_id }}
+    steps:
+      - name: Determine AMI ID
+        id: determine
+        run: |
+          case "${{ github.event.inputs.deployment_mode }}" in
+            full-deploy)
+              AMI_ID="${{ needs.build-ami.outputs.ami_id }}"
+              ;;
+            deploy-latest-ami)
+              AMI_ID="${{ needs.get-latest-ami.outputs.ami_id }}"
+              ;;
+            deploy-custom-ami)
+              AMI_ID="${{ github.event.inputs.custom_ami_id }}"
+              if [ -z "$AMI_ID" ]; then
+                echo "Error: custom_ami_id is required for deploy-custom-ami mode"
+                exit 1
+              fi
+              ;;
+            plan-only)
+              AMI_ID="dummy"
+              ;;
+          esac
+
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+          echo "Using AMI: $AMI_ID"
+
+  deploy:
+    name: Deploy Infrastructure
+    needs: set-ami
+    if: always() && needs.set-ami.result == 'success' && github.event.inputs.deployment_mode != 'build-ami-only'
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKSPACE: ${{ env.PROJECT_NAME }}-${{ github.event.inputs.environment }}
+    outputs:
+      public_ip: ${{ steps.outputs.outputs.public_ip }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Create Terraform override
+        if: github.event.inputs.deployment_mode != 'plan-only'
+        run: |
+          cat > override.auto.tfvars <<EOF
+          app_ami_id = "${{ needs.set-ami.outputs.ami_id }}"
+          ssh_public_key = "${{ secrets.SSH_PUBLIC_KEY }}"
+          EOF
+        working-directory: io/terraform
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: io/terraform
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        working-directory: io/terraform
+
+      - name: Terraform Apply
+        if: github.event.inputs.deployment_mode != 'plan-only'
+        run: terraform apply -auto-approve tfplan
+        working-directory: io/terraform
+
+      - name: Get Outputs
+        if: github.event.inputs.deployment_mode != 'plan-only'
+        id: outputs
+        run: |
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "Deployed to IP: $PUBLIC_IP"
+        working-directory: io/terraform
+
+      - name: Cleanup override file
+        if: always()
+        run: rm -f override.auto.tfvars
+        working-directory: io/terraform
+
+  deployment-summary:
+    name: Deployment Summary
+    needs: [set-ami, deploy]
+    runs-on: ubuntu-latest
+    if: always() && github.event.inputs.deployment_mode != 'build-ami-only'
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode:** ${{ github.event.inputs.deployment_mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**AMI ID:** ${{ needs.set-ami.outputs.ami_id }}" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event.inputs.deployment_mode }}" != "plan-only" ]; then
+            echo "**Public IP:** ${{ needs.deploy.outputs.public_ip }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Note:** Plan-only mode - no changes were applied" >> $GITHUB_STEP_SUMMARY
+          fi

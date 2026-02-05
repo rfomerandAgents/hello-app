@@ -1,0 +1,7 @@
+# Terraform Module Architect Requirements
+# Phase 13 - Migration Assistant
+
+# Note: python-hcl2 is optional for advanced HCL parsing
+# The migration assistant works with basic regex parsing by default
+# Uncomment the line below to enable advanced HCL2 parsing:
+# python-hcl2>=4.3.0

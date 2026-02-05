@@ -1,0 +1,57 @@
+package test
+
+import (
+	"testing"
+	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/stretchr/testify/assert"
+)
+
+func Test{{MODULE_NAME_UNDERSCORED}}Module(t *testing.T) {
+	t.Parallel()
+
+	// Configure Terraform options
+	terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
+		TerraformDir: "../examples/basic",
+
+		Vars: map[string]interface{}{
+			"name":        "test-{{MODULE_NAME}}",
+			"environment": "test",
+		},
+	})
+
+	// Clean up resources at test end
+	defer terraform.Destroy(t, terraformOptions)
+
+	// Deploy resources
+	terraform.InitAndApply(t, terraformOptions)
+
+	// Retrieve outputs
+	// TODO: Add output retrieval when outputs are defined
+	// moduleID := terraform.Output(t, terraformOptions, "id")
+
+	// Assertions
+	// TODO: Add assertions when outputs are defined
+	// assert.NotEmpty(t, moduleID, "Module ID should not be empty")
+
+	// Verify resources in AWS
+	// TODO: Add AWS resource verification
+}
+
+func Test{{MODULE_NAME_UNDERSCORED}}ModuleOutputs(t *testing.T) {
+	t.Parallel()
+
+	terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
+		TerraformDir: "../examples/basic",
+
+		Vars: map[string]interface{}{
+			"name":        "test-{{MODULE_NAME}}-outputs",
+			"environment": "test",
+		},
+	})
+
+	defer terraform.Destroy(t, terraformOptions)
+	terraform.InitAndApply(t, terraformOptions)
+
+	// Test that all expected outputs exist
+	// TODO: Add output tests
+}

@@ -1,0 +1,39 @@
+# Basic Example - {{MODULE_NAME}}
+
+This example demonstrates basic usage of the {{MODULE_NAME}} module.
+
+## Usage
+
+1. Initialize Terraform:
+   ```bash
+   terraform init
+   ```
+
+2. Review the plan:
+   ```bash
+   terraform plan
+   ```
+
+3. Apply the configuration:
+   ```bash
+   terraform apply
+   ```
+
+4. Destroy when done:
+   ```bash
+   terraform destroy
+   ```
+
+## What This Creates
+
+- Basic {{MODULE_TYPE}} resources
+- Standard tagging
+- Development environment configuration
+
+## Customization
+
+Modify `main.tf` to:
+- Change resource names
+- Adjust environment
+- Add custom tags
+- Configure module-specific options

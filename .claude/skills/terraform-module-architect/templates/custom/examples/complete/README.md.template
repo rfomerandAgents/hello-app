@@ -1,0 +1,45 @@
+# Complete Example - {{MODULE_NAME}}
+
+This example demonstrates all available options of the {{MODULE_NAME}} module.
+
+## Features Demonstrated
+
+- All module variables
+- Production-grade configuration
+- Comprehensive tagging
+- Multiple output values
+
+## Usage
+
+1. Initialize Terraform:
+   ```bash
+   terraform init
+   ```
+
+2. Review the plan:
+   ```bash
+   terraform plan
+   ```
+
+3. Apply the configuration:
+   ```bash
+   terraform apply
+   ```
+
+4. View outputs:
+   ```bash
+   terraform output
+   ```
+
+5. Destroy when done:
+   ```bash
+   terraform destroy
+   ```
+
+## Configuration Details
+
+This example includes:
+- Production environment settings
+- All module-specific options
+- Comprehensive tagging strategy
+- Multiple resource outputs

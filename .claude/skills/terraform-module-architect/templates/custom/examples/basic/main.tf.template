@@ -1,0 +1,18 @@
+# Basic Example for {{MODULE_NAME}} Module
+
+module "{{MODULE_NAME_UNDERSCORED}}" {
+  source = "../.."
+
+  name        = "example"
+  environment = "dev"
+
+  tags = {
+    Example = "basic"
+  }
+}
+
+# Example outputs
+output "module_id" {
+  description = "Module ID from {{MODULE_NAME}}"
+  value       = module.{{MODULE_NAME_UNDERSCORED}}.id
+}

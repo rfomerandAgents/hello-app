@@ -1,0 +1,96 @@
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+.npm
+
+# Next.js
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Claude hooks logs
+logs/
+
+# Git worktrees for deployment operations
+.worktrees/
+
+# Agent output directories
+agents/
+
+# Tree visualization
+trees/
+!trees/README.md
+
+# IPE deployment logs
+ipe_logs/
+
+# Bun lock files
+bun.lock
+bun.lockb
+
+# Troubleshooting directories
+failure/
+
+# Port configuration
+.ports.env
+
+# Terraform
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+!terraform/terraform.tfvars.example
+terraform/.terraform/
+terraform/logs/*.log
+
+# Packer
+packer/manifest.json
+
+# Screenshots
+screenshots/
+
+# Videos
+videos/
+
+# Deep specs
+deep_specs/
+
+# Storage files
+storage.json
+
+# Claude output files
+claude-max-output.json
+claude-max-output.jsonl
